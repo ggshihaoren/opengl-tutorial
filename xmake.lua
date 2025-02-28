@@ -1,0 +1,12 @@
+target("openGL")
+    set_kind("binary")
+    add_files("src/*.c") 
+    add_files("src/*.cpp")
+    add_includedirs("include")
+    add_links("glfw")
+    set_configdir("$(buildir)/$(plat)/$(arch)/$(mode)")
+    add_configfiles("src/*.fs", {onlycopy = true})
+    add_configfiles("src/*.vs", {onlycopy = true})
+    add_configfiles("resource/*.png", {onlycopy = true})
+    add_configfiles("resource/*.jpg", {onlycopy = true})
+
