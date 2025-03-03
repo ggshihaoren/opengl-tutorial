@@ -103,7 +103,7 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
-    Shader ourShader("src/model_loading.vs", "src/model_loading.fs");
+    Shader ourShader("src/model_loading.vs", "src/model_loading.fs", "src/model_loading.gs");
 
     Model ourModel("resource/backpack/backpack.obj");
 
@@ -141,6 +141,7 @@ int main()
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // translate it down so it's at the center of the scene
         model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));	// it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
+        ourShader.setFloat("time", static_cast<float>(glfwGetTime()));
         ourModel.Draw(ourShader);
 
         
