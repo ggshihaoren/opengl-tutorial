@@ -5,11 +5,19 @@ in vec2 TexCoords;
 in vec3 WorldPos;
 in vec3 Normal;
 
-uniform sampler2D albedoMap;
-uniform sampler2D normalMap;
-uniform sampler2D metallicMap;
-uniform sampler2D roughnessMap;
-uniform sampler2D aoMap;
+// uniform sampler2D albedoMap;
+// uniform sampler2D normalMap;
+// uniform sampler2D metallicMap;
+// uniform sampler2D roughnessMap;
+// uniform sampler2D aoMap;
+
+uniform vec3 albedo;
+uniform float metallic;
+uniform float roughness;
+uniform float ao;
+
+// IBL
+uniform samplerCube irradianceMap;
 
 uniform vec3 lightPositions[4];
 uniform vec3 lightColors[4];
@@ -20,22 +28,22 @@ const float PI = 3.14159265359;
 
 // fragment shader需要纹理坐标，点世界坐标，法线，光照位置，光照颜色，相机位置，以及材质属性（贴图）
 
-vec3 getNormalFromMap()
-{ // 通过法线，坐标点，纹理坐标计算TNB,将切线空间的法线转到世界空间
-    vec3 tangentNormal = texture(normalMap, TexCoords).xyz * 2.0 - 1.0;
+// vec3 getNormalFromMap()
+// { // 通过法线，坐标点，纹理坐标计算TNB,将切线空间的法线转到世界空间
+//     vec3 tangentNormal = texture(normalMap, TexCoords).xyz * 2.0 - 1.0;
 
-    vec3 Q1  = dFdx(WorldPos);
-    vec3 Q2  = dFdy(WorldPos);
-    vec2 st1 = dFdx(TexCoords);
-    vec2 st2 = dFdy(TexCoords);
+//     vec3 Q1  = dFdx(WorldPos);
+//     vec3 Q2  = dFdy(WorldPos);
+//     vec2 st1 = dFdx(TexCoords);
+//     vec2 st2 = dFdy(TexCoords);
 
-    vec3 N   = normalize(Normal);
-    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
-    vec3 B  = -normalize(cross(N, T));
-    mat3 TBN = mat3(T, B, N);
+//     vec3 N   = normalize(Normal);
+//     vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
+//     vec3 B  = -normalize(cross(N, T));
+//     mat3 TBN = mat3(T, B, N);
 
-    return normalize(TBN * tangentNormal);
-}
+//     return normalize(TBN * tangentNormal);
+// }
 
 float DistributionGGX(vec3 N, vec3 H, float roughness)
 { 
@@ -91,18 +99,19 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 
 void main()
 {
-    vec3 albedo = pow(texture(albedoMap, TexCoords).rgb, vec3(2.2)); // gamma矫正
-    float metallic = texture(metallicMap, TexCoords).r;
-    float roughness = texture(roughnessMap, TexCoords).r;
-    float ao = texture(aoMap, TexCoords).r;
+    // vec3 albedo = pow(texture(albedoMap, TexCoords).rgb, vec3(2.2)); // gamma矫正
+    // float metallic = texture(metallicMap, TexCoords).r;
+    // float roughness = texture(roughnessMap, TexCoords).r;
+    // float ao = texture(aoMap, TexCoords).r;
 
-    vec3 N = getNormalFromMap();
+    // vec3 N = getNormalFromMap();
+    vec3 N = normalize(Normal);
     vec3 V = normalize(camPos - WorldPos);
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)   
     // 计算平面的基础反射率， 大多数电介质表面而言使用0.04作为基础反射率已经足够,金属表面使用albedo作为基础反射率
-    vec3 F0 = vec3(0.04);
+    vec3 F0 = vec3(0.04); // 材质在 0 度入射角时的菲涅尔反射系数，通常与材质类型相关，例如非金属为 0.04，金属基于 albedo
     F0 = mix(F0, albedo, metallic);
 
     // 反射方程
@@ -141,7 +150,13 @@ void main()
 
     // ambient lighting
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0); // 法线和反射方向的夹角
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metallic;	
+    vec3 irradiance = texture(irradianceMap, N).rgb;
+    vec3 diffuse = irradiance * albedo; // 漫反射
+    vec3 ambient = (kD * diffuse) * ao; //结合辐照度贴图、材质颜色和环境遮蔽，计算最终的环境光贡献。
+
     vec3 color = ambient + Lo;
 
     // HDR tonemapping

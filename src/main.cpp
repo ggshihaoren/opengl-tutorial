@@ -313,15 +313,17 @@ int main()
     glDepthFunc(GL_LEQUAL);
 
     Shader pbrShader("src/pbr.vs", "src/pbr.fs");
-    Shader equirectangularToCubemapShader("src/cubemap.vs", "src/cubemap.fs"); // 等距柱面投影到立方体贴图
+    Shader equirectangularToCubemapShader("src/cubemap.vs", "src/equirectangular_to_cubemap.fs"); // 等距柱面投影到立方体贴图
     Shader backgroundShader("src/background.vs", "src/background.fs");
+    Shader irradianceShader("src/cubemap.vs", "src/irradiance_convolutions.fs");
 
 
-    unsigned int albedo    = loadTexture("resource/PBR/rustediron2_basecolor.png");
-    unsigned int normal    = loadTexture("resource/PBR/rustediron2_normal.png");
-    unsigned int metallic  = loadTexture("resource/PBR/rustediron2_metallic.png");
-    unsigned int roughness = loadTexture("resource/PBR/rustediron2_roughness.png");
-    unsigned int ao        = loadTexture("resource/PBR/ao.png");
+    // unsigned int albedo    = loadTexture("resource/PBR/rustediron2_basecolor.png");
+    // unsigned int normal    = loadTexture("resource/PBR/rustediron2_normal.png");
+    // unsigned int metallic  = loadTexture("resource/PBR/rustediron2_metallic.png");
+    // unsigned int roughness = loadTexture("resource/PBR/rustediron2_roughness.png");
+    // unsigned int ao        = loadTexture("resource/PBR/ao.png");
+
 
     glm::vec3 lightPositions[] = {
         glm::vec3(-10.0f,  10.0f, 10.0f),
@@ -341,9 +343,14 @@ int main()
 
 
     pbrShader.use();
+    pbrShader.setInt("irradianceMap", 0);
+    pbrShader.setVec3("albedo", 0.5f, 0.0f, 0.0f);
+    pbrShader.setFloat("ao", 1.0f);
+
     backgroundShader.use();
     backgroundShader.setInt("environmentMap", 0); // 环境贴图
 
+    // 创建帧缓冲对象和渲染缓冲对象，分别绑定，渲染缓冲对象作为附件存储深度，颜色等信息，最后将附件附加到帧缓冲对象上
     unsigned int captureFBO;
     unsigned int captureRBO;
     glGenFramebuffers(1, &captureFBO);
@@ -426,6 +433,41 @@ int main()
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    // 创建辐照度贴图
+    unsigned int irradianceMap;
+    glGenTextures(1, &irradianceMap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap);
+    for (unsigned int i = 0; i < 6; i++) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16, 32, 32, 0, GL_RGB, GL_FLOAT, nullptr);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR); 
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, captureFBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, captureRBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, 32, 32); 
+
+    irradianceShader.use();
+    irradianceShader.setInt("environmentMap", 0);
+    irradianceShader.setMat4("projection", captureProjection);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
+
+    glViewport(0, 0, 32, 32); // don't forget to configure the viewport to the capture dimensions.
+    glBindFramebuffer(GL_FRAMEBUFFER, captureFBO);
+    for (unsigned int i = 0; i < 6; ++i) {
+        irradianceShader.setMat4("view", captureViews[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, irradianceMap, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        renderCube();
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)(float)SCR_HEIGHT, 0.1f, 100.0f);
     pbrShader.use();
     pbrShader.setMat4("projection", projection);
@@ -462,20 +504,30 @@ int main()
         pbrShader.setMat4("view", view);
         pbrShader.setVec3("camPos", camera.Position);
 
+        // glActiveTexture(GL_TEXTURE0);
+        // glBindTexture(GL_TEXTURE_2D, albedo);
+        // glActiveTexture(GL_TEXTURE1);
+        // glBindTexture(GL_TEXTURE_2D, normal);
+        // glActiveTexture(GL_TEXTURE2);
+        // glBindTexture(GL_TEXTURE_2D, metallic);
+        // glActiveTexture(GL_TEXTURE3);
+        // glBindTexture(GL_TEXTURE_2D, roughness);
+        // glActiveTexture(GL_TEXTURE4);
+        // glBindTexture(GL_TEXTURE_2D, ao);
+
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, albedo);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, normal);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, metallic);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, roughness);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, ao);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap);
 
         glm::mat4 model = glm::mat4(1.0f);
-        for (int row = 0; row < nrRows; ++row) {
-            for (int col = 0; col < nrColumns; ++col) {
+        for (int row = 0; row < nrRows; ++row)
+        {
+            pbrShader.setFloat("metallic", (float)row / (float)nrRows);
+            for (int col = 0; col < nrColumns; ++col)
+            {
+                // we clamp the roughness to 0.025 - 1.0 as perfectly smooth surfaces (roughness of 0.0) tend to look a bit off
+                // on direct lighting.
+                pbrShader.setFloat("roughness", glm::clamp((float)col / (float)nrColumns, 0.05f, 1.0f));
+
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, glm::vec3(
                     (float)(col - (nrColumns / 2)) * spacing,
@@ -505,7 +557,8 @@ int main()
         backgroundShader.use();
         backgroundShader.setMat4("view", view);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
+        // glBindTexture(GL_TEXTURE_CUBE_MAP, envCubemap);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, irradianceMap); // display irradiance map
         renderCube();
 
         
