@@ -17,7 +17,10 @@ uniform float roughness;
 uniform float ao;
 
 // IBL
-uniform samplerCube irradianceMap;
+uniform samplerCube irradianceMap; // 辐照度贴图
+uniform samplerCube prefilterMap; // 预过滤贴图
+uniform sampler2D brdfLUT; // BRDF积分贴图
+
 
 uniform vec3 lightPositions[4];
 uniform vec3 lightColors[4];
@@ -62,7 +65,7 @@ float DistributionGGX(vec3 N, vec3 H, float roughness)
     return nom / denom;
 }
 
-float GeometrySchlickGGX(float NdotV, float roughness)
+float GeometrySchlickGGX(float NdotV, float roughness) // 与视线方向和法线夹角，粗糙度有关
 {
     // 几何函数Schlick-GGX,从统计学上近似的求得了微平面间相互遮蔽的比率，这种相互遮蔽会损耗光线的能量。
     // GGX = dot(N, V) / (dot(N, V) *(1 - k) + k)
@@ -97,6 +100,14 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    // 由于菲涅尔方程是基于理想的光滑表面推导出来的，对于粗糙表面，我们需要对菲涅尔方程进行调整
+    // F = F0 + (max(1 - roughness, F0) - F0) * (1 - cosTheta)^5
+    // 通过粗糙度调整菲涅尔方程
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 void main()
 {
     // vec3 albedo = pow(texture(albedoMap, TexCoords).rgb, vec3(2.2)); // gamma矫正
@@ -107,6 +118,7 @@ void main()
     // vec3 N = getNormalFromMap();
     vec3 N = normalize(Normal);
     vec3 V = normalize(camPos - WorldPos);
+    vec3 R = reflect(-V, N); // 反射方向
 
     // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0 
     // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)   
@@ -149,13 +161,19 @@ void main()
     }
 
     // ambient lighting
-
-    vec3 kS = fresnelSchlick(max(dot(N, V), 0.0), F0); // 法线和反射方向的夹角
+    vec3 F = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness); // 法线和反射方向的夹角,基础反射率，粗糙度
+    vec3 kS = F; 
     vec3 kD = 1.0 - kS;
     kD *= 1.0 - metallic;	
     vec3 irradiance = texture(irradianceMap, N).rgb;
     vec3 diffuse = irradiance * albedo; // 漫反射
-    vec3 ambient = (kD * diffuse) * ao; //结合辐照度贴图、材质颜色和环境遮蔽，计算最终的环境光贡献。
+
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 prefilteredColor = textureLod(prefilterMap, R, roughness * MAX_REFLECTION_LOD).rgb; // 预过滤贴图,反射方向，粗糙度指定lod来采样对应等级的mipmap
+    vec2 brdf = texture(brdfLUT, vec2(max(dot(N,V), 0.0), roughness)).rg; // n dot v为横坐标, roughness为纵坐标，采样BRDF积分贴图
+    vec3 specular = prefilteredColor * (kS * brdf.x + brdf.y); // 镜面反射
+
+    vec3 ambient = (kD * diffuse + specular) * ao; //结合辐照度贴图、材质颜色和环境遮蔽，计算最终的环境光贡献。
 
     vec3 color = ambient + Lo;
 
