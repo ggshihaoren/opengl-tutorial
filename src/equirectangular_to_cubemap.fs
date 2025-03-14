@@ -1,5 +1,7 @@
 #version 330 core
 
+// 漫反射辐照度贴图
+
 out vec4 FragColor;
 in vec3 WorldPos;
 
