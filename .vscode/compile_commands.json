@@ -1,0 +1,11 @@
+[
+{
+  "directory": "/home/gg/opengl/test",
+  "arguments": ["/usr/bin/gcc", "-c", "-m64", "-Iinclude", "-o", "build/.objs/openGL/linux/x86_64/release/src/glad.c.o", "src/glad.c"],
+  "file": "src/glad.c"
+},
+{
+  "directory": "/home/gg/opengl/test",
+  "arguments": ["/usr/bin/gcc", "-c", "-m64", "-Iinclude", "-o", "build/.objs/openGL/linux/x86_64/release/src/main.cpp.o", "src/main.cpp"],
+  "file": "src/main.cpp"
+}]
